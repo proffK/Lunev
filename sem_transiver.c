@@ -12,15 +12,13 @@
 #include <sys/sem.h>
 
 #define BUFFER_SIZE 4088
-#define SEM_NUMS 5
+#define SEM_NUMS 3
 #define SEM_PERM 0666
 #define SHM_PERM 0666
 
-#define EMPTY 0
-#define FULL 1
+#define REC 0
+#define TRAN 1
 #define MUTEX 2
-#define REC 3
-#define TRAN 4
 
 #define PREPARE_OP(SEM, NUM, OP, FLAG) SEM.sem_num = (NUM);\
                                        SEM.sem_op = (OP);\
@@ -99,15 +97,12 @@ int send_mode(int fd_inp, int semid, int shmid)
 {
     shared_buf* shbuf = NULL;
     size_t cur_size = BUFFER_SIZE;
-    struct sembuf sop[5];
+    struct sembuf sop[3];
 
     PREPARE_OP(sop[0], TRAN, 0, IPC_NOWAIT | SEM_UNDO);
-    PREPARE_OP(sop[1], TRAN, 1, SEM_UNDO);
-    PREPARE_OP(sop[2], EMPTY, 1, SEM_UNDO);
-    //PREPARE_OP(sop[3], FULL, -1, SEM_UNDO);
-    PREPARE_OP(sop[4], MUTEX, 1, SEM_UNDO);
+    PREPARE_OP(sop[1], TRAN, 0, SEM_UNDO);
 
-    if (semop(semid, sop, 4) == -1) {
+    if (semop(semid, sop, 2) == -1) {
 
         if (errno != EAGAIN) {
 
@@ -131,30 +126,25 @@ int send_mode(int fd_inp, int semid, int shmid)
 
     }
 
-    SEM_DOWN(EMPTY)  /* P(empty) */
-    SEM_DOWN(MUTEX) /* P(mutex) */
-
-    cur_size = read(fd_inp, shbuf -> buf, BUFFER_SIZE);
-    shbuf -> size = cur_size;
-    
-    SEM_UP(MUTEX)   /* V(mutex) */
-    SEM_UP(FULL)   /* V(full) */
-
-    PREPARE_OP(sop[0], FULL, 0, 0) /* Wait reciever */
-    semop(semid, sop, 1);
+    PREPARE_OP(sop[0], MUTEX, 1, SEM_UNDO)
+    PREPARE_OP(sop[1], MUTEX, -1, 0)
+    semop(semid, sop, 2);
 
     while (cur_size == BUFFER_SIZE) {
         
-        NUSEM_DOWN(EMPTY)  /* P(empty) */
-        SEM_DOWN(MUTEX) /* P(mutex) */
+        PREPARE_OP(sop[0], MUTEX, 0, 0)
+        semop(semid, sop, 1);
 
         cur_size = read(fd_inp, shbuf -> buf, BUFFER_SIZE);
         shbuf -> size = cur_size;
         sleep(1);
         
-        SEM_UP(MUTEX)   /* V(mutex) */
-        NUSEM_UP(FULL)   /* V(full) */
+        NUSEM_UP(MUTEX)   
+
     }
+
+    PREPARE_OP(sop[0], MUTEX, 0, 0)
+    semop(semid, sop, 1);
 
     if (shmdt(shbuf)) {
 
@@ -162,9 +152,6 @@ int send_mode(int fd_inp, int semid, int shmid)
         exit(EXIT_FAILURE);
 
     }
-
-    PREPARE_OP(sop[0], REC, 0, 0) /* Wait reciever's terminate */
-    semop(semid, sop, 1);
 
     return 0;
 }
@@ -186,7 +173,6 @@ int receive_mode(fd_out, semid, shmid)
 
     PREPARE_OP(sop[0], REC, 0, IPC_NOWAIT | SEM_UNDO)
     PREPARE_OP(sop[1], REC, 1, SEM_UNDO)
-    //PREPARE_OP(sop[2], FULL, 1, SEM_UNDO);
     
     if (semop(semid, sop, 2) == -1) {
 
@@ -203,25 +189,20 @@ int receive_mode(fd_out, semid, shmid)
 
     }
 
-    SEM_DOWN(FULL) /* P(full) */
-    SEM_DOWN(MUTEX) /* P(mutex) */
-
-    cur_size = shbuf -> size;
-    cur_size = write(fd_out, shbuf -> buf, cur_size);
-
-    SEM_UP(MUTEX)   /* V(mutex) */
-    SEM_UP(EMPTY)    /* V(empty) */
+    PREPARE_OP(sop[0], MUTEX, 1, SEM_UNDO)
+    PREPARE_OP(sop[1], MUTEX, -1, 0)
+    semop(semid, sop, 2);
 
     while (cur_size == BUFFER_SIZE) {
 
-        NUSEM_DOWN(FULL) /* P(full) */
-        SEM_DOWN(MUTEX) /* P(mutex) */
-
+        PREPARE_OP(sop[0], MUTEX, -1, 0)
+        PREPARE_OP(sop[1], MUTEX, 1, 0)
+        semop(semid, sop, 2);
+        
         cur_size = shbuf -> size;
         cur_size = write(fd_out, shbuf -> buf, cur_size);
 
-        SEM_UP(MUTEX)   /* V(mutex) */
-        NUSEM_UP(EMPTY)    /* V(empty) */
+        NUSEM_DOWN(MUTEX)  
     }
 
     if (semctl(semid, 0, IPC_RMID, 0)) {
