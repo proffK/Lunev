@@ -257,7 +257,6 @@ int main(int argc, char* argv[]) {
     for (i = 0; i < n; ++i) {
 
         prbuf_delete(buff_arr[i]);
-        free(buff_arr[i]);
 
     }
 
@@ -364,7 +363,7 @@ int prbuf_read(prbuf* buf) {
 
 
         if (buf->rptr > (buf->data + buf->size) - size) {
-            fprintf(stderr, "!%d!%d rptr %d size %d data %d freesize !!!\n", buf->fd_inp, buf->rptr, size, buf->data, buf->free_size);
+            //fprintf(stderr, "!%d!%d rptr %d size %d data %d freesize !!!\n", buf->fd_inp, buf->rptr, size, buf->data, buf->free_size);
             //write(2, buf->data, 4096);
             //write(2, buf->rptr, 4096);
         }
@@ -392,11 +391,6 @@ int prbuf_read(prbuf* buf) {
         buf->rptr += size;
         //if (buf->free_size < size) perror("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$");
         buf->free_size -= size;
-        if (buf->fd_inp == 28) {
-
-            fprintf(stderr, "free_size: %d\n", buf->free_size);
-
-        }
 
         if (buf->rptr == buf->data + buf->size) buf->rptr = buf->data;
 
