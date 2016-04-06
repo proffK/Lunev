@@ -100,7 +100,7 @@ int send_mode(int fd_inp, int semid, int shmid)
     struct sembuf sop[3];
 
     PREPARE_OP(sop[0], TRAN, 0, IPC_NOWAIT | SEM_UNDO);
-    PREPARE_OP(sop[1], TRAN, 0, SEM_UNDO);
+    PREPARE_OP(sop[1], TRAN, 1, SEM_UNDO);
 
     if (semop(semid, sop, 2) == -1) {
 
@@ -128,18 +128,52 @@ int send_mode(int fd_inp, int semid, int shmid)
 
     PREPARE_OP(sop[0], MUTEX, 1, SEM_UNDO)
     PREPARE_OP(sop[1], MUTEX, -1, 0)
-    semop(semid, sop, 2);
+    PREPARE_OP(sop[2], REC, -1, 0)
+    PREPARE_OP(sop[3], REC, 1, 0)
+    semop(semid, sop, 4);
 
     while (cur_size == BUFFER_SIZE) {
         
         PREPARE_OP(sop[0], MUTEX, 0, 0)
-        semop(semid, sop, 1);
+
+        if (semop(semid, sop, 1) == -1) {
+            
+            if (errno != EAGAIN) {
+    
+                perror("Can't take sem\n");
+                exit(EXIT_FAILURE);
+    
+            } else {
+    
+                return 0;
+    
+            }
+    
+        }
 
         cur_size = read(fd_inp, shbuf -> buf, BUFFER_SIZE);
         shbuf -> size = cur_size;
-        sleep(1);
+        //sleep(1);
         
-        NUSEM_UP(MUTEX)   
+        PREPARE_OP(sop[0], REC, -1, IPC_NOWAIT)
+        PREPARE_OP(sop[1], REC, 1, 0)
+        PREPARE_OP(sop[2], MUTEX, 1, 0)
+
+        if (semop(semid, sop, 3) == -1) {
+            
+            if (errno != EAGAIN) {
+    
+                perror("Can't take sem\n");
+                exit(EXIT_FAILURE);
+    
+            } else {
+    
+                return 0;
+    
+            }
+    
+        }
+
 
     }
 
@@ -160,7 +194,7 @@ int receive_mode(fd_out, semid, shmid)
 {
     shared_buf* shbuf = NULL;
     size_t cur_size = BUFFER_SIZE;
-    struct sembuf sop[3];
+    struct sembuf sop[4];
 
     shbuf = (shared_buf*) shmat (shmid, NULL, 0); 
 
@@ -191,19 +225,54 @@ int receive_mode(fd_out, semid, shmid)
 
     PREPARE_OP(sop[0], MUTEX, 1, SEM_UNDO)
     PREPARE_OP(sop[1], MUTEX, -1, 0)
-    semop(semid, sop, 2);
+    PREPARE_OP(sop[2], TRAN, -1, 0)
+    PREPARE_OP(sop[3], TRAN, 1, 0)
+    semop(semid, sop, 4);
 
     while (cur_size == BUFFER_SIZE) {
 
-        PREPARE_OP(sop[0], MUTEX, -1, 0)
-        PREPARE_OP(sop[1], MUTEX, 1, 0)
-        semop(semid, sop, 2);
+        PREPARE_OP(sop[0], TRAN, -1, IPC_NOWAIT)
+        PREPARE_OP(sop[1], TRAN, 1, 0)
+        PREPARE_OP(sop[2], MUTEX, -1, 0)
+        PREPARE_OP(sop[3], MUTEX, 1, 0)
+
+        if (semop(semid, sop, 4) == -1) {
+           
+            if (errno != EAGAIN) {
+    
+                perror("Can't take sem\n");
+                exit(EXIT_FAILURE);
+    
+            } else {
+    
+                return 0;
+    
+            }
+    
+        }
         
         cur_size = shbuf -> size;
         cur_size = write(fd_out, shbuf -> buf, cur_size);
 
-        NUSEM_DOWN(MUTEX)  
-    }
+        PREPARE_OP(sop[0], TRAN, -1, IPC_NOWAIT)
+        PREPARE_OP(sop[1], TRAN, 1, 0)
+        PREPARE_OP(sop[2], MUTEX, -1, 0)
+
+        if (semop(semid, sop, 3) == -1) {
+           
+            if (errno != EAGAIN) {
+    
+                perror("Can't take sem\n");
+                exit(EXIT_FAILURE);
+    
+            } else {
+    
+                return 0;
+    
+            }
+    
+        }
+     }
 
     if (semctl(semid, 0, IPC_RMID, 0)) {
 

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <getopt.h>
 #include <unistd.h>
+#include <sys/wait.h>
 
 int main(int argc, char* argv[]) {
     int n = 0, opt = 0, i = 0;
@@ -39,15 +40,15 @@ int main(int argc, char* argv[]) {
         if ((pid = fork()) == 0) {
             pid = getpid();
 
-            fprintf(stderr, "%d %d %d\n", i + 1, pid, ppid);
+            fprintf(stderr, "%d %d %d\n", i + 1, pid, getppid());
             return 0;
 
         }
-        wait(&err_w);
+    wait((int*) 12345);
+    perror("ds");
 
     }
         
     return 0;
 }
-
 
